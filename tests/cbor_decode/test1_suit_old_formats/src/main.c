@@ -112,47 +112,31 @@ void test_1(void)
 				&outerwrapper),
 			"test_vector2 failed");
 	zassert_equal(2, outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
-			._Manifest_sequence
 			._Manifest_sequence,
-			"Sequence number incorrect");
+			"Sequence number incorrect (%d)", outerwrapper._OuterWrapper_manifest_cbor._Manifest_sequence);
 	zassert_true(outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
-			._Manifest_payloads
 			._Manifest_payloads_present,
 			"Expected payloads entry");
 	zassert_equal(1, outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
-			._Manifest_payloads
 			._Manifest_payloads_present,
 			"Expected payloads present");
 	zassert_equal(1, outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
 			._Manifest_payloads
-			._Manifest_payloads
-			._Manifest_payloads__PayloadInfo
 			._Manifest_payloads__PayloadInfo_count,
 			"Expected single payloads entry, was %d",
 			outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
 			._Manifest_payloads
-			._Manifest_payloads
-			._Manifest_payloads__PayloadInfo
 			._Manifest_payloads__PayloadInfo_count);
 	zassert_mem_equal(expected_tag,
 			outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
 			._Manifest_payloads
-			._Manifest_payloads
-			._Manifest_payloads__PayloadInfo
 			._Manifest_payloads__PayloadInfo[0]
-			._PayloadInfo_payloadDigest
 			._PayloadInfo_payloadDigest
 			._COSE_Mac0_tag
 			.value,
@@ -174,46 +158,34 @@ void test_2(void)
 				&outerwrapper),
 			"test_vector3 failed");
 	zassert_equal(2, outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
-			._Manifest_sequence
 			._Manifest_sequence,
-			"Sequence number incorrect");
+			"Sequence number incorrect (%d)", outerwrapper._OuterWrapper_manifest_cbor._Manifest_sequence);
 	zassert_equal(1, outerwrapper
-			._OuterWrapper_textExt
 			._OuterWrapper_textExt_present,
 			"Expected text present");
 	zassert_equal(1, outerwrapper
 			._OuterWrapper_textExt
-			._OuterWrapper_textExt_cbor
-			._OuterWrapper_textExt__Text_count,
+			._OuterWrapper_textExt_cbor_count,
 			"Expected single text entry");
 	zassert_equal(1, outerwrapper
 			._OuterWrapper_textExt
-			._OuterWrapper_textExt_cbor
-			._OuterWrapper_textExt__Text_count,
+			._OuterWrapper_textExt_cbor_count,
 			"Expected single text entry");
 	zassert_equal(1, outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
 			._Manifest_payloads
-			._Manifest_payloads
-			._Manifest_payloads__PayloadInfo
 			._Manifest_payloads__PayloadInfo_count,
 			"Expected single payloads entry, was %d",
 			outerwrapper
-			._OuterWrapper_manifest
 			._OuterWrapper_manifest_cbor
 			._Manifest_payloads
-			._Manifest_payloads
-			._Manifest_payloads__PayloadInfo
 			._Manifest_payloads__PayloadInfo_count);
 	zassert_mem_equal(expected_updateDescription,
 			outerwrapper
 			._OuterWrapper_textExt
-			._OuterWrapper_textExt_cbor
-			._OuterWrapper_textExt__Text[0]
-			._Text_tstr
+			._OuterWrapper_textExt_cbor[0]
+			._Text_tstr[0]
 			._Text_tstr[0]
 			.value,
 			sizeof(expected_updateDescription) - 1,
@@ -229,21 +201,16 @@ void test_3(void)
 		sizeof(test_vector4), &outerwrapper4), "test_vector failed");
 	zassert_equal(2,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
-		      ._SUIT_Manifest_suit_manifest_sequence_number
 		      ._SUIT_Manifest_suit_manifest_sequence_number,
 		      "Sequence number incorrect");
 	zassert_equal(1,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
-		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install_present,
 		      "Expected install present");
 	zassert_equal(_SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
@@ -251,58 +218,47 @@ void test_3(void)
 		      "Expected install present");
 	zassert_equal(3,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command_count,
 		      "Expected x commands.");
 	zassert_equal(_SUIT_Command_union__SUIT_Directive,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[0]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union_choice,
 		      "Expected directive");
 	zassert_equal(_SUIT_Directive_SUIT_Directive_Set_Component_Index,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[0]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive_choice,
 		      "Expected Component_Index");
 	zassert_equal(_SUIT_Directive_SUIT_Directive_Set_Component_Index_uint,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[0]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive
@@ -311,179 +267,139 @@ void test_3(void)
 		      NULL);
 	zassert_equal(_SUIT_Command_union__SUIT_Directive,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[1]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union_choice,
 		      "Expected directive");
 	zassert_equal(_SUIT_Directive_SUIT_Directive_Set_Parameters,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[1]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive_choice,
 		      "Expected Set_Parameters");
 	zassert_equal(1,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[1]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters_count,
 		      "Expected 1 parameter");
 zassert_equal(_SUIT_Parameters_SUIT_Parameter_URI_List,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[1]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters[0]
 		      ._SUIT_Parameters_choice,
 		      "Expected uri list parameter");
 	zassert_equal(1,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[1]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters[0]
 		      ._SUIT_Parameters
 		      ._SUIT_Parameters_SUIT_Parameter_URI_List
 		      ._SUIT_Parameters_SUIT_Parameter_URI_List_cbor
-		      ._SUIT_URI_List__SUIT_Prioritized_URI
 		      ._SUIT_URI_List__SUIT_Prioritized_URI_count,
 		      "Expected 1 uri");
 	zassert_equal(0,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[1]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters[0]
 		      ._SUIT_Parameters
 		      ._SUIT_Parameters_SUIT_Parameter_URI_List
 		      ._SUIT_Parameters_SUIT_Parameter_URI_List_cbor
-		      ._SUIT_URI_List__SUIT_Prioritized_URI
 		      ._SUIT_URI_List__SUIT_Prioritized_URI[0]
 		      ._SUIT_Prioritized_URI_priority,
 		      "Expected priority x");
 	zassert_mem_equal(expected_uri,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[1]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters
-		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters
 		      ._SUIT_Directive_SUIT_Directive_Set_Parameters__SUIT_Parameters[0]
 		      ._SUIT_Parameters
 		      ._SUIT_Parameters_SUIT_Parameter_URI_List
 		      ._SUIT_Parameters_SUIT_Parameter_URI_List_cbor
-		      ._SUIT_URI_List__SUIT_Prioritized_URI
 		      ._SUIT_URI_List__SUIT_Prioritized_URI[0]
 		      ._SUIT_Prioritized_URI_uri.value,
 		      sizeof(expected_uri) - 1,
 		      "Expected example.com uri");
 	zassert_equal(_SUIT_Command_union__SUIT_Directive,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[2]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union_choice,
 		      "Expected directive");
 	zassert_equal(_SUIT_Directive_SUIT_Directive_Fetch,
 		      outerwrapper4
-		      ._SUIT_Outer_Wrapper_suit_manifest
 		      ._SUIT_Outer_Wrapper_suit_manifest_cbor
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Manifest_suit_install
 		      ._SUIT_Severable_Command_Sequence3
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence
 		      ._SUIT_Severable_Command_Sequence3_SUIT_Command_Sequence_cbor
-		      ._SUIT_Command_Sequence__SUIT_Command
 		      ._SUIT_Command_Sequence__SUIT_Command[2]
-		      ._SUIT_Command_union
 		      ._SUIT_Command_union
 		      ._SUIT_Command_union__SUIT_Directive
 		      ._SUIT_Directive_choice,

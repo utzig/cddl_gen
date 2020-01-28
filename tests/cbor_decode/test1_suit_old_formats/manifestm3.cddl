@@ -182,7 +182,7 @@ OuterWrapper = {
   BatteryLevelCondition = [ batteryLevel: 8,
                             level: uint ]
   CustomCondition = [nint,
-                     parameters: bstr]
+                     customParameters: bstr]
 
   Timestamp       = uint
 
@@ -203,7 +203,7 @@ OuterWrapper = {
   ExternalPowerDirective = [ 5 ]
   NetworkDisconnectDirective = [ 6 ]
   CustomDirective        = [ nint,
-                             ? parameters: bstr ]
+                             ? customParameters: bstr ]
 
   InstallationInfo = {
      payloadInstallationInfo : [ * PayloadInstallationInfo ],

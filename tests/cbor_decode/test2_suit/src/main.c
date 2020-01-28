@@ -60,55 +60,43 @@ void test_5(void)
 			._SUIT_Manifest_Wrapped_suit_manifest
 			._SUIT_Manifest_Wrapped_suit_manifest_cbor;
 	zassert_equal(1, manifest
-			->_SUIT_Manifest_suit_manifest_version
-			._SUIT_Manifest_suit_manifest_version,
+			->_SUIT_Manifest_suit_manifest_version,
 			"wrong manifest version");
 	zassert_equal(1, manifest
-			->_SUIT_Manifest_suit_manifest_sequence_number
-			._SUIT_Manifest_suit_manifest_sequence_number,
+			->_SUIT_Manifest_suit_manifest_sequence_number,
 			"wrong sequence number");
 	zassert_equal(1, manifest
-			->_SUIT_Manifest_suit_common
-			._SUIT_Manifest_suit_common_present,
+			->_SUIT_Manifest_suit_common_present,
 			"common should be present");
 	zassert_equal(0, manifest
-			->_SUIT_Manifest_suit_dependency_resolution
-			._SUIT_Manifest_suit_dependency_resolution_present,
+			->_SUIT_Manifest_suit_dependency_resolution_present,
 			"should not be present");
 	zassert_equal(0, manifest
-			->_SUIT_Manifest_suit_payload_fetch
-			._SUIT_Manifest_suit_payload_fetch_present,
+			->_SUIT_Manifest_suit_payload_fetch_present,
 			"should not be present");
 	zassert_equal(0, manifest
-			->_SUIT_Manifest_suit_install
-			._SUIT_Manifest_suit_install_present,
+			->_SUIT_Manifest_suit_install_present,
 			"should not be present");
 	zassert_equal(0, manifest
-			->_SUIT_Manifest_suit_validate
-			._SUIT_Manifest_suit_validate_present,
+			->_SUIT_Manifest_suit_validate_present,
 			"should not be present");
 	zassert_equal(0, manifest
-			->_SUIT_Manifest_suit_load
-			._SUIT_Manifest_suit_load_present,
+			->_SUIT_Manifest_suit_load_present,
 			"should not be present");
 	zassert_equal(1, manifest
-			->_SUIT_Manifest_suit_run
-			._SUIT_Manifest_suit_run_present,
+			->_SUIT_Manifest_suit_run_present,
 			"should not be present");
 	zassert_equal(0, manifest
-			->_SUIT_Manifest_suit_text
-			._SUIT_Manifest_suit_text_present,
+			->_SUIT_Manifest_suit_text_present,
 			"should not be present");
 	zassert_equal(0, manifest
-			->_SUIT_Manifest_suit_coswid
-			._SUIT_Manifest_suit_coswid_present,
+			->_SUIT_Manifest_suit_coswid_present,
 			"should not be present");
 	zassert_equal(1, manifest
 			->_SUIT_Manifest_suit_common
 			._SUIT_Manifest_suit_common_cbor
 			._SUIT_Common_suit_components
 			._SUIT_Common_suit_components_cbor
-			._SUIT_Components__SUIT_Component_Identifier
 			._SUIT_Components__SUIT_Component_Identifier_count,
 			"Wrong number of common components");
 	component = &manifest
@@ -116,31 +104,25 @@ void test_5(void)
 			._SUIT_Manifest_suit_common_cbor
 			._SUIT_Common_suit_components
 			._SUIT_Common_suit_components_cbor
-			._SUIT_Components__SUIT_Component_Identifier
 			._SUIT_Components__SUIT_Component_Identifier[0];
 	zassert_equal(2, component
-			->_SUIT_Component_Identifier_bstr
-			._SUIT_Component_Identifier_bstr_count,
+			->_SUIT_Component_Identifier_bstr_count,
 			"Wrong number of elements in component");
 	zassert_equal(sizeof(expected_component0), component
-			->_SUIT_Component_Identifier_bstr
-			._SUIT_Component_Identifier_bstr[0]
+			->_SUIT_Component_Identifier_bstr[0]
 			.len,
 			"component elem 0 len doesn't match.");
 	zassert_mem_equal(expected_component0, component
-			->_SUIT_Component_Identifier_bstr
-			._SUIT_Component_Identifier_bstr[0]
+			->_SUIT_Component_Identifier_bstr[0]
 			.value,
 			sizeof(expected_component0),
 			"component elem 0 doesn't match.");
 	zassert_equal(sizeof(expected_component1), component
-			->_SUIT_Component_Identifier_bstr
-			._SUIT_Component_Identifier_bstr[1]
+			->_SUIT_Component_Identifier_bstr[1]
 			.len,
 			"component elem 1 len doesn't match.");
 	zassert_mem_equal(expected_component1, component
-			->_SUIT_Component_Identifier_bstr
-			._SUIT_Component_Identifier_bstr[1]
+			->_SUIT_Component_Identifier_bstr[1]
 			.value,
 			sizeof(expected_component1),
 			"component elem 1 doesn't match.");
@@ -149,7 +131,6 @@ void test_5(void)
 	zassert_equal(1, manifest
 			->_SUIT_Manifest_suit_common
 			._SUIT_Manifest_suit_common_cbor
-			._SUIT_Common_suit_common_sequence
 			._SUIT_Common_suit_common_sequence_present,
 			"common sequence should be present.");
 	res =
@@ -169,25 +150,19 @@ void test_5(void)
 			&sequence);
 	zassert_true(res, "Parsing common sequence failed.");
 	zassert_equal(1, sequence
-			._SUIT_Command_Sequence__SUIT_Command
 			._SUIT_Command_Sequence__SUIT_Command_count,
 			"Should be one command (was %d).", sequence
-			._SUIT_Command_Sequence__SUIT_Command
 			._SUIT_Command_Sequence__SUIT_Command_count);
 	zassert_equal(_SUIT_Command__SUIT_Directive, sequence
-			._SUIT_Command_Sequence__SUIT_Command
 			._SUIT_Command_Sequence__SUIT_Command[0]
 			._SUIT_Command_choice,
 			"Should be a directive.");
 	zassert_equal(2, sequence
-			._SUIT_Command_Sequence__SUIT_Command
 			._SUIT_Command_Sequence__SUIT_Command[0]
 			._SUIT_Command
 			._SUIT_Command__SUIT_Directive
 			._SUIT_Directive
 			._SUIT_Directive___suit_directive_set_parameters
-			._SUIT_Directive___suit_directive_set_parameters_map
-			._SUIT_Directive___suit_directive_set_parameters_map__SUIT_Parameters
 			._SUIT_Directive___suit_directive_set_parameters_map__SUIT_Parameters_count,
 			"Should be two vars (parameters).");
 	cbor_decode_print("\r\n");

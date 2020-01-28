@@ -4,11 +4,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-import regex
+from regex import match, search, sub, findall, S, M
 from pprint import pformat, pprint
 from os import path, linesep, makedirs
 from collections import defaultdict
-import argparse
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
 # Size of "additional" field if num is encoded as int
 def sizeof(num):
@@ -36,6 +36,19 @@ def counter(reset = False):
         return _counter
     _counter += 1
     return _counter
+
+# Replace an element in a list or tuple and return the list. For use in lambdas.
+def listReplaceIfNotNull(l, i, r):
+    if l[i] is "NULL":
+        return l
+    if isinstance(l, tuple):
+        convert = tuple
+        l = list(l)
+    else:
+        assert isinstance(l, list)
+        convert = list
+    l[i] = r
+    return convert(l)
 
 # Class for parsing CDDL. One instance represents one CBOR data item, with a few caveats:
 #  - For repeated data, one instance represents all repetitions.
@@ -67,6 +80,7 @@ class TYPE:
         self.key = None # Key element. Only for children of "MAP" elements. self.key is of the same class as self.
         self.quantifier = None # The CDDL string used to determine the minQ and maxQ. Not used after minQ and maxQ are
                                # determined.
+        self.matchStr = ""
 
     def setIdPrefix(self, id_prefix):
         self.id_prefix = id_prefix
@@ -183,17 +197,17 @@ class TYPE:
 
         quantifierMapping =\
         [
-            ("\?", lambda match: (0, 1)),
-            ("\*", lambda match: (0, None)),
-            ("\+", lambda match: (1, None)),
-            ("(\d*)\*(\d*)", lambda match: (int(match.groups()[0]), int(match.groups()[1]))),
+            ("\?", lambda matchObj: (0, 1)),
+            ("\*", lambda matchObj: (0, None)),
+            ("\+", lambda matchObj: (1, None)),
+            ("(\d*)\*(\d*)", lambda matchObj: (int(matchObj.groups()[0]), int(matchObj.groups()[1]))),
         ]
 
         self.quantifier = quantifier
         for (reg, handler) in quantifierMapping:
-            match = regex.match(reg, quantifier)
-            if match:
-                (self.minQ, self.maxQ) = handler(match)
+            matchObj = match(reg, quantifier)
+            if matchObj:
+                (self.minQ, self.maxQ) = handler(matchObj)
                 if self.maxQ is None: self.maxQ = self.DEFAULT_MAXQ
                 return
         raise ValueError("invalid quantifier: %s" % quantifier)
@@ -228,16 +242,18 @@ class TYPE:
         self.maxSize = maxSize
 
     # Set the self.cbor of this element. For use during CDDL parsing.
-    def setCbor(self, typestr, cborseq):
+    def setCbor(self, cbor, cborseq):
         if self.type is not "BSTR": raise TypeError("%s must be used with bstr." % (".cborseq" if cborseq else ".cbor",))
-        self.cbor = typestr
+        self.cbor = cbor
         if cborseq: self.cbor.maxQ = self.DEFAULT_MAXQ
+        self.cbor.setBaseName("cbor")
 
     # Set the self.key of this element. For use during CDDL parsing.
     def setKey(self, key):
         if self.key is not None: raise TypeError("Cannot have two keys: " + key)
         if key.type is "GROUP": raise TypeError("A key cannot be a group")
         self.key = key
+        self.key.setBaseName("key")
 
     # Set the self.label OR self.key of this element. In the CDDL "foo: bar", foo can be either a label or a key
     # depending on whether it is in a map. This code uses a slightly different method for choosing between label and
@@ -310,21 +326,22 @@ class TYPE:
 
         # Keep parsing until a comma, or to the end of the string.
         while instr is not '' and instr[0] is not ',':
-            match = None
+            matchObj = None
             for (reg, handler) in types:
-                # match = regex.match(reg, instr, regex.S)
-                match = regex.match(reg, instr)
-                if match:
+                # matchObj = match(reg, instr, S)
+                matchObj = match(reg, instr)
+                if matchObj:
                     break
 
-            if not match: raise TypeError("Could not parse this: '%s'" % instr)
+            if not matchObj: raise TypeError("Could not parse this: '%s'" % instr)
             try:
-                matchstr = match.group("item")
+                matchstr = matchObj.group("item")
             except IndexError as e:
-                matchstr = match.group(0)
+                matchstr = matchObj.group(0)
             handler(matchstr)
+            self.matchStr += matchstr
             oldLen = len(instr)
-            instr = regex.sub(reg, '', instr, count=1).lstrip()
+            instr = sub(reg, '', instr, count=1).lstrip()
             if oldLen == len(instr):
                 raise(Exception("empty match"))
         instr = instr[1:]
@@ -398,23 +415,70 @@ class TYPE_decoder_generator_CBOR(TYPE):
                  or ("_"+self.value if self.type is "OTHER" else None)
                  or ("_"+self.value[0].baseName() if self.type in ["LIST", "GROUP"] and self.value is not None else None)
                  or (self.cbor.value if self.cbor and self.cbor.type in ["TSTR", "OTHER"] else None)
-                #  or str(f"{self.idNum()}_{self.type.lower()}")).replace("-", "_"))
                  or self.type.lower()).replace("-", "_"))
+
+    # Set an explicit base name for this element.
+    def setBaseName(self, base_name):
+        self.base_name = base_name
 
     # Add uniqueness to the base name.
     def id(self):
         return "%s%s" % ((self.id_prefix+"_") if self.id_prefix is not "" else "", self.baseName())
 
-    # Name of the typedef for this element.
-    def typeName(self):
-        assert self.varDeclCondition(), "No typename for %s" % self.varName()
-        if not self.typeCondition() and self.type in ["INT", "UINT", "NINT", "FLOAT", "BSTR", "TSTR", "BOOL", "OTHER"]:
-            return self.varType()[0]
+    # Base name if this element needs to declare a type.
+    def rawTypeName(self):
         return "%s_t" % self.id()
+
+    # Name of the type of this element's actual value variable.
+    def valTypeName(self):
+        if self.multiValCondition():
+            return self.rawTypeName()
+
+        name = {
+            "INT":   lambda : "int32_t",
+            "UINT":  lambda : "uint32_t",
+            "NINT":  lambda : "int32_t",
+            "FLOAT": lambda : "float_t",
+            "BSTR":  lambda : "cbor_string_type_t",
+            "TSTR":  lambda : "cbor_string_type_t",
+            "BOOL":  lambda : "bool",
+            "NIL":   lambda : None,
+            "ANY":   lambda : None,
+            "LIST":  lambda : self.value[0].typeName(),
+            "MAP":   lambda : self.value[0].typeName(),
+            "GROUP": lambda : self.value[0].typeName(),
+            "UNION": lambda : self.unionType(),
+            "OTHER": lambda : mytypes[self.value].typeName(),
+        }[self.type]()
+
+        return name
+
+    # Name of the type of for the repeated part of this element.
+    def repeatedTypeName(self):
+        if self.selfRepeatedMultiVarCondition():
+            name = self.rawTypeName()
+            if self.valTypeName() == name:
+                name = "_" + name
+        else:
+            name = self.valTypeName()
+        return name
+
+    # Name of the type for this element.
+    def typeName(self):
+        if self.multiVarCondition():
+            name = self.rawTypeName()
+            if self.valTypeName() == name:
+                name = "_" + name
+            if self.repeatedTypeName() == name:
+                name = "_" + name
+        else:
+            name = self.repeatedTypeName()
+        return name
 
     # Name of variables and enum members for this element.
     def varName(self):
-        return ("_%s" % self.id())
+        name = ("_%s" % self.id())
+        return name
 
     # Create an access prefix based on an existing prefix, delimiter and a suffix.
     def accessAppendDelim(self, prefix, delimiter, *suffix):
@@ -422,15 +486,18 @@ class TYPE_decoder_generator_CBOR(TYPE):
         return delimiter.join((prefix,) + suffix)
 
     # Create an access prefix from this element's prefix, delimiter and a provided suffix.
-    def accessAppend(self, *suffix):
+    def accessAppend(self, *suffix, full=True):
+        suffix = list(suffix)
         return self.accessAppendDelim(self.accessPrefix, self.accessDelimiter, *suffix)
 
     # "Path" to this element's variable.
-    def varAccess(self):
-        if not self.multiMember():
-            return self.accessPrefix
-        else:
-            return self.accessAppend(self.varName())
+    # If full is false, the path to the repeated part is returned.
+    def varAccess(self, full=False):
+        return self.accessAppend(full=full)
+
+    # "Path" to access this element's actual value variable.
+    def valAccess(self):
+        return self.accessAppend(self.varName(), full=False)
 
     # Whether to include a "present" variable for this element.
     def presentVarCondition(self):
@@ -464,43 +531,13 @@ class TYPE_decoder_generator_CBOR(TYPE):
     def countVarAccess(self):
         return self.accessAppend(self.countVarName())
 
-    # Whether to include a "len" variable for this element.
-    def lenVarCondition(self):
-        return False # self.type in ["TSTR", "BSTR"]
-
-    # Name of the "len" variable for this element.
-    def lenVarName(self):
-        return "%s_len" % (self.varName())
-
-    # Declaration of the "len" variable for this element.
-    def lenVar(self):
-        return ["size_t %s%s;" % self.lenVarName(), "[%d]" % self.maxQ if self.maxQ != 1 else ""]
-
-    # Full "path" of the "le " variable for this element.
-    def lenVarAccess(self):
-        return self.accessAppend(self.lenVarName())
-
     # Whether to include a "cbor" variable for this element.
     def isCbor(self):
-        return (self.varDeclCondition() and (self.label not in entryTypeNames) and ((self.type != "OTHER") or ((self.value not in entryTypeNames) and mytypes[self.value].isCbor())))
+        return (self.typeName() is not None) and ((self.type != "OTHER") or ((self.value not in entryTypeNames) and mytypes[self.value].isCbor()))
 
     # Whether to include a "cbor" variable for this element.
     def cborVarCondition(self):
         return ((self.cbor is not None) and self.cbor.isCbor())
-
-    # Name of the "cbor" variable for this element.
-    def cborVarName(self):
-        return self.varName() + "_cbor"
-
-    # Declaration of the "cbor" variable for this element.
-    def cborVar(self):
-        varType = [self.cbor.typeName()]
-        varType[-1] += " %s;" % self.cborVarName()
-        return varType
-
-    # Full "path" of the "cbor" variable for this element.
-    def cborVarAccess(self):
-        return self.accessAppend(self.cborVarName())
 
     # Whether to include a "choice" variable for this element.
     def choiceVarCondition(self):
@@ -512,183 +549,185 @@ class TYPE_decoder_generator_CBOR(TYPE):
 
     # Declaration of the "choice" variable for this element.
     def choiceVar(self):
-        return ["enum {", *['%s%s,' % (self.indentation, val.varName(),) for val in self.value], "} " + self.choiceVarName() + ";"]
+        var = self.enclose("enum", [val.varName() + "," for val in self.value])
+        var[-1] += f" {self.choiceVarName()};"
+        return var
 
     # Full "path" of the "choice" variable for this element.
     def choiceVarAccess(self):
-        return self.accessAppend(self.choiceVarName())
+        return self.accessAppend(self.choiceVarName(), full=False)
 
     # Whether to include a "key" variable for this element.
     def keyVarCondition(self):
         return self.key is not None
 
-    # Name of the "key" variable for this element.
-    def keyVarName(self):
-        return self.varName() + "_key"
+    # Whether this value adds any repeated elements by itself. I.e. excluding multiple elements from children.
+    def selfRepeatedMultiVarCondition(self):
+        return (self.keyVarCondition()
+                or self.cborVarCondition()
+                or self.choiceVarCondition())
 
-    # Declaration of the "key" variable for this element.
-    def keyVar(self):
-        varType = [self.key.typeName()]
-        varType[-1] += " %s;" % self.keyVarName()
-        return varType
+    # Whether this element's actual value has multiple members.
+    def multiValCondition(self):
+        return (self.type in ["LIST", "MAP", "GROUP", "UNION"]
+                and (len(self.value) > 1
+                     or self.value[0].multiMember()))
 
-    # Full "path" of the "key" variable for this element.
-    def keyVarAccess(self):
-        return self.accessAppend(self.keyVarName())
+    # Whether any extra variables are to be included for this element for each repetition.
+    def repeatedMultiVarCondition(self):
+        return self.selfRepeatedMultiVarCondition() or self.multiValCondition()
 
-    # Whether to include a "num" variable for this element.
-    def numVarName(self):
-        return self.varName() + "_num"
+    # Whether any extra variables are to be included for this element outside of repetitions.
+    def multiVarCondition(self):
+        return self.presentVarCondition() or self.countVarCondition()
 
-    # Name of the "num" variable for this element.
-    def numVarCondition(self):
-        return False# self.type in ["LIST", "MAP", "GROUP"]
-
-    # Declaration of the "num" variable for this element.
-    def numVar(self):
-        return ["size_t %s;" % self.numVarName()]
-
-    # Full "path" of the "num" variable for this element.
-    def numVarAccess(self):
-        return self.accessAppendDelim(self.varAccess(), self.accessDelimiter, self.numVarName())
-
-    # Whether any extra variables are to be included for this element.
-    def extraVarCondition(self):
-        return self.keyVarCondition() or self.lenVarCondition() or self.cborVarCondition() or self.presentVarCondition() or self.countVarCondition() or self.choiceVarCondition()
+    # Whether this element must involve a call to multi_decode(), i.e. unless it's repeated exactly once.
+    def multiDecodeCondition(self):
+        return self.minQ != 1 or self.maxQ != 1
 
     # Name of the decoder function for this element.
     def decodeFuncName(self):
         return "decode%s" % self.varName()
 
-    # Declaration of the variable for this element, as part of another struct.
-    def var(self):
-        if not self.varDeclCondition():
-            return ""
-        return self.typeName() + " %s;" % self.varName()
+    # Name of the decoder function for the repeated part of this element.
+    def repeatedDecodeFuncName(self):
+        return "decode_repeated%s" % self.varName()
 
-    # Type declaration for elements with children.
-    def multiType(self, ingress, singles = False):
-        declaration = [val.var() for val in self.value if val.var()]
-        if self.numVarCondition():
-            numVar = self.numVar()
-            declaration = numVar + declaration
-        if ingress:
-            declaration = [ingress + " {"] + [self.indentation + line for line in declaration] + ["}"]
+    # Declaration of the variables of all children.
+    def childDeclarations(self):
+        decl = [line for child in self.value for line in child.fullDeclaration()]
+        return decl
+
+    # Declaration of the variables of all children.
+    def childSingleDeclarations(self):
+        decl = [line for child in self.value for line in child.addVarName(child.singleVarType())]
+        return decl
+
+    # Enclose a list of declarations in a block (struct, union or enum).
+    def enclose(self, ingress, declaration):
+        return [f"{ingress} {{"] + [self.indentation + line for line in declaration] + ["}"]
+
+    # Type declaration for unions.
+    def unionType(self):
+        declaration = self.enclose("union", self.childSingleDeclarations())
         return declaration
-
-    # Type declaration all elements by type.
-    def varType(self):
-        types = {
-            "INT":   lambda : ["int32_t"],
-            "UINT":  lambda : ["uint32_t"],
-            "NINT":  lambda : ["int32_t"],
-            "FLOAT": lambda : ["float_t"],
-            "BSTR":  lambda : ["cbor_string_type_t"],
-            "TSTR":  lambda : ["cbor_string_type_t"],
-            "BOOL":  lambda : ["bool"],
-            "NIL":   lambda : [],
-            "ANY":   lambda : [],
-            "LIST":  lambda : self.multiType("struct"),
-            "MAP":   lambda : self.multiType("struct"),
-            "GROUP": lambda : self.multiType("struct"),
-            "UNION": lambda : self.multiType("union", singles = True),
-            "OTHER": lambda : [mytypes[self.value].typeName()]
-        }
-        return types[self.type]()
 
     # Recursively set the access prefix for this element and all its children.
     def setAccessPrefix(self, prefix):
         self.accessPrefix = prefix
-        # print("setAccessPrefix", self.varName(), prefix, self.varAccess())
-        if self.type in ["LIST", "MAP", "GROUP", "UNION"]:
-            list(map(lambda child: child.setAccessPrefix(self.accessAppendDelim(self.varAccess(), self.accessDelimiter, child.varName())), self.value))
+        if self.type in ["LIST", "MAP", "GROUP"]:
+            list(map(lambda child: child.setAccessPrefix(self.varAccess()), self.value))
+        if self.type is "UNION":
+            list(map(lambda child: child.setAccessPrefix(self.accessAppendDelim(self.valAccess(), self.accessDelimiter, child.varName()) if child.multiMember() else self.valAccess()), self.value))
         if self.key is not None:
-            self.key.setAccessPrefix(self.keyVarAccess())
+            self.key.setAccessPrefix(self.varAccess())
         if self.cborVarCondition():
-            self.cbor.setAccessPrefix(self.cborVarAccess())
+            self.cbor.setAccessPrefix(self.varAccess())
 
     # Whether this type has multiple member variables.
     def multiMember(self):
-        return self.extraVarCondition()
+        return self.multiVarCondition() or self.repeatedMultiVarCondition()
 
     # Take a multi member type name and create a variable declaration. Make it an array if the element is repeated.
     def addVarName(self, varType):
         if (varType != []):
-            assert(varType[-1][-1] == "}" or len(varType) == 1)
+            assert(varType[-1][-1] == "}" or len(varType) == 1), f"Expected single var: {varType!r}"
             varType[-1] += " %s%s;" % (self.varName(), "[%d]" % self.maxQ if self.maxQ != 1 else "")
         return varType
 
-    # Full declaration(s) of this element.
-    def declaration(self):
+    # The type for this element as a member variable.
+    def varType(self):
+        if not self.multiValCondition() and self.valTypeName() is not None:
+            return [self.valTypeName()]
+        elif self.type is "UNION":
+            return self.unionType()
+        return []
+
+    # Declaration of the repeated part of this element.
+    def repeatedDeclaration(self):
         varType = self.varType()
-        multiMember = False
+        multiVar = False
 
         decl = self.addVarName(varType)
 
+        if self.type in ["LIST", "MAP", "GROUP"]:
+            decl += self.childDeclarations()
+            multiVar = len(decl) > 1
+
         if self.keyVarCondition():
-            keyVar = self.keyVar()
+            keyVar = self.key.fullDeclaration()
             decl = keyVar + decl
-            multiMember = keyVar is not []
+            multiVar = keyVar is not []
 
         if self.choiceVarCondition():
             choiceVar = self.choiceVar()
             decl += choiceVar
-            multiMember = choiceVar is not []
+            multiVar = choiceVar is not []
 
         if self.cborVarCondition():
-            cborVar = self.cborVar()
+            cborVar = self.cbor.fullDeclaration()
             decl += cborVar
-            multiMember = cborVar is not []
+            multiVar = cborVar is not []
+
+        if self.type not in ["LIST", "MAP", "GROUP"] or len(self.value) <= 1:
+            # This assert isn't accurate for value lists with NIL or ANY members.
+            assert multiVar == self.repeatedMultiVarCondition(), f"""type: {self.type}
+            multivar is {multiVar} while
+            self.repeatedMultiVarCondition() is {self.repeatedMultiVarCondition()} for
+            decl {decl}
+            self.keyVarCondition() is {self.keyVarCondition()}
+            self.key is {self.key}
+            self.cborVarCondition() is {self.cborVarCondition()}
+            self.choiceVarCondition() is {self.choiceVarCondition()}
+            self.value is {self.value}"""
+        return decl
+
+    # Declaration of the full type for this element.
+    def fullDeclaration(self):
+        multiVar = False
+
+        if self.multiVarCondition():
+            decl = self.addVarName([self.repeatedTypeName()] if self.repeatedTypeName() is not None else [])
+        else:
+            decl = self.repeatedDeclaration()
 
         if self.countVarCondition():
             countVar = self.countVar()
             decl += countVar
-            multiMember = countVar is not []
+            multiVar = countVar is not []
 
         if self.presentVarCondition():
             presentVar = self.presentVar()
             decl += presentVar
-            multiMember = presentVar is not []
+            multiVar = presentVar is not []
 
-        assert multiMember == self.multiMember()
+        assert multiVar == self.multiVarCondition()
         return decl
 
     # Return the type definition of this element. If there are multiple variables, wrap them in a struct so the function
-    # always returns a single type.
-    def singleVarType(self, typedef=False):
-        decl = self.declaration()
+    # always returns a single type with no name.
+    # If full is False, only repeated part is used.
+    def singleVarType(self, full=True):
         if self.multiMember():
-            decl = ["struct {", *[self.indentation + line for line in decl], "}"]
-            return decl
+            return self.enclose("struct", self.fullDeclaration() if full else self.repeatedDeclaration())
         else:
             return self.varType()
 
-    # Return a full variable declaration of the element as a single variable.
-    def singleVarDecl(self):
-        decl = self.addVarName(self.singleVarType())
-        return decl
-
-    def varDeclCondition(self):
-        if self.type is "OTHER":
-            return mytypes[self.value].varDeclCondition()
-        return self.type not in ["NIL", "ANY"] or self.typeDefCondition()
-
+    # Whether this element needs a check (memcmp) for a string value.
     def expectedStringCondition(self):
-        return self.type in ["BSTR", "TSTR"] and self.value
+        return self.type in ["BSTR", "TSTR"] and not not self.value
 
     # Whether this element should have a typedef in the code.
     def typeDefCondition(self):
-        if self.type == "OTHER" and not self.multiMember():
-            return False
-        if self.type in ["NIL", "ANY"] and not self.multiMember():
-            return False
-        return True
+        if (self in mytypes.values() and self.multiMember()):
+            return True
+        return False
 
-    # Whether this element should have a typedef in the code.
-    def typeCondition(self):
-        if self.type in ["INT", "UINT", "NINT", "FLOAT", "BSTR", "TSTR", "BOOL", "NIL", "ANY", "OTHER"] and not self.multiMember():
-            return False
-        return True
+    # Whether this type needs a typedef for its repeated part.
+    def repeatedTypeDefCondition(self):
+        if self.repeatedMultiVarCondition() and self.multiVarCondition():
+            return True
+        return False
 
     # Return the type definition of this element, and all its children + key + cbor.
     def typeDef(self):
@@ -697,10 +736,14 @@ class TYPE_decoder_generator_CBOR(TYPE):
             retval.extend([elem for typedef in [child.typeDef() for child in self.value] for elem in typedef])
         if self.cborVarCondition():
             retval.extend(self.cbor.typeDef())
-        if self.key:
+        if self.keyVarCondition():
             retval.extend(self.key.typeDef())
-        if self.typeDefCondition() and self.typeCondition():
-            retval.extend([(self.singleVarType(typedef=True), self.typeName())])
+        if self.type is "OTHER":
+            retval.extend(mytypes[self.value].typeDef())
+        if self.repeatedTypeDefCondition():
+            retval.extend([(self.singleVarType(full=False), self.repeatedTypeName())])
+        if self.typeDefCondition():
+            retval.extend([(self.singleVarType(), self.typeName())])
         return retval
 
     # The variable to use as the running element count for this variable. Since an instance of this variable must be
@@ -745,60 +788,51 @@ class TYPE_decoder_generator_CBOR(TYPE):
     def maxValOrNull(self, value):
         return self.valOrNull(value, "max_value")
 
-    def resultLen(self):
-        retval = {
-            "INT": lambda: "sizeof(int32_t)",
-            "UINT": lambda: "sizeof(uint32_t)",
-            "NINT": lambda: "sizeof(int32_t)",
-            "FLOAT": lambda: "sizeof(double)",
-            "BSTR": lambda: "sizeof(cbor_string_type_t)",
-            "TSTR": lambda: "sizeof(cbor_string_type_t)",
-            "BOOL": lambda: "sizeof(uint8_t)",
-            "NIL": lambda: "sizeof(uint8_t)",
-            "ANY": lambda: "0",
-            "LIST": lambda: "sizeof(%s)" % self.typeName(),
-            "MAP": lambda: "sizeof(%s)" % self.typeName(),
-            "GROUP": lambda: "sizeof(%s)" % self.typeName(),
-            "UNION": lambda: "sizeof(%s)" % self.typeName(),
-            "OTHER": lambda: mytypes[self.value].resultLen()
-        }[self.type]()
-        return retval
-
     # Return the function name and arguments to call to decode this element. Only used when this element DOESN'T define
     # its own decoder function (when it's a primitive type, for which functions already exist, or when the function is
     # defined elsewhere ("OTHER"))
     def singleFuncPrim(self):
-        if self.type is "OTHER":
-            mytypes[self.value].setAccessPrefix(self.varAccess())
-
         retval = {
-            "INT":   lambda: ["intx32_decode", self.varAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
-            "UINT":  lambda: ["uintx32_decode", self.varAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
-            "NINT":  lambda: ["intx32_decode", self.varAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
-            "FLOAT": lambda: ["float_decode", self.varAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
-            "BSTR":  lambda: ["strx_decode" if not self.cborVarCondition() else "strx_start_decode", self.varAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
-            "TSTR":  lambda: ["strx_decode", self.varAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
-            "BOOL":  lambda: ["boolx_decode", self.varAccess(), self.minValOrNull(1 if self.value else 0), self.maxValOrNull(0 if self.value == False else 1)],
+            "INT":   lambda: ["intx32_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
+            "UINT":  lambda: ["uintx32_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
+            "NINT":  lambda: ["intx32_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
+            "FLOAT": lambda: ["float_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
+            "BSTR":  lambda: ["strx_decode" if not self.cborVarCondition() else "strx_start_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
+            "TSTR":  lambda: ["strx_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
+            "BOOL":  lambda: ["boolx_decode", self.valAccess(), self.minValOrNull(1 if self.value else 0), self.maxValOrNull(0 if self.value == False else 1)],
             "NIL":   lambda: ["primx_decode", "NULL", self.minValOrNull(22), self.maxValOrNull(22)],
             "ANY":   lambda: ["any_decode", "NULL", "NULL", "NULL"],
-            "OTHER": lambda: mytypes[self.value].singleFunc(),
+            "LIST":  lambda: self.value[0].singleFunc(),
+            "OTHER": lambda: listReplaceIfNotNull(mytypes[self.value].singleFunc(), 1, self.valAccess()),
         }[self.type]()
         return retval
 
     # Return the function name and arguments to call to decode this element. Only used when this element has its own
     # decode function
-    def singleFuncImpl(self):
-        retval = (self.decodeFuncName(), self.accessPrefix, "NULL", "NULL")
+    def singleFuncImpl(self, full=True):
+        retval = (self.decodeFuncName() if full else self.repeatedDecodeFuncName(), self.varAccess() if full else self.valAccess(), "NULL", "NULL")
         return retval
 
     # Whether this element needs its own decoder function.
     def singleFuncImplCondition(self):
-        return (self.key or self.cborVarCondition() or (self.type in ["LIST", "MAP", "GROUP", "UNION"] or self.expectedStringCondition()))
+        retval = (False or self.key or self.cborVarCondition() or self.expectedStringCondition() or self.typeDefCondition())
+        return retval
+
+    # Whether this element needs its own decoder function.
+    def repeatedSingleFuncImplCondition(self):
+        return self.repeatedTypeDefCondition()
 
     # Return the function name and arguments to call to decode this element.
     def singleFunc(self):
         if self.singleFuncImplCondition():
             return self.singleFuncImpl()
+        else:
+            return self.singleFuncPrim()
+
+    # Return the function name and arguments to call to decode the repeated part of this element.
+    def repeatedSingleFunc(self):
+        if self.repeatedSingleFuncImplCondition():
+            return self.singleFuncImpl(full=False)
         else:
             return self.singleFuncPrim()
 
@@ -825,10 +859,11 @@ class TYPE_decoder_generator_CBOR(TYPE):
     def decodeSingleFuncPrim(self):
         return self.decodeStatement(*self.singleFuncPrim())
 
+    # Return the full code needed to decode a "BSTR" or "TSTR" element.
     def decodeStr(self):
         assert self.type in ["BSTR", "TSTR"], "Expected string type."
         return self.decodeSingleFuncPrim() +\
-            ("&& !memcmp(\"{0}\", {1}.value, {1}.len)".format(self.value, self.accessPrefix) if self.expectedStringCondition() else "")
+            ("&& !memcmp(\"{0}\", {1}.value, {1}.len)".format(self.value, self.valAccess()) if self.expectedStringCondition() else "")
 
 
     # Recursively sum the total minimum and maximum element count for this element.
@@ -859,26 +894,25 @@ class TYPE_decoder_generator_CBOR(TYPE):
                                                          str(sum(minCounts)),
                                                          str(sum(maxCounts))),)
                                      + (self.setElemCounts("(%s * %d)" % ("temp_elem_count", 2 if self.type is "MAP" else 1)),)
-                                     + tuple(child.decode2(self.countIndirection + 1) for child in self.value))
+                                     + tuple(child.fullDecode(self.countIndirection + 1) for child in self.value))
 
     # Return the full code needed to decode a "GROUP" element's children.
     def decodeGroup(self):
         assert self.type in ["GROUP"], "Expected GROUP type."
-        return "(%s)" % (self.newl_ind + "&& ").join((child.decode2(self.countIndirection) for child in self.value))
+        return "(%s)" % (self.newl_ind + "&& ").join((child.fullDecode(self.countIndirection) for child in self.value))
 
     # Return the full code needed to decode a "UNION" element's children.
     def decodeUnion(self):
         assert self.type in ["UNION"], "Expected UNION type."
-        return "((p_payload_bak = *pp_payload) && ((elem_count_bak = *%s) || 1) && (%s))" % (self.elemCountVar(), (self.newl_ind + "|| ").join(("(%s && %s && ((%s = %s) || 1))" % ("(*pp_payload = p_payload_bak) && ((*%s = elem_count_bak) || 1)" % self.elemCountVar(), child.decode2(self.countIndirection), self.choiceVarAccess(), child.varName()) for child in self.value)))
+        return "((p_payload_bak = *pp_payload) && ((elem_count_bak = *%s) || 1) && (%s))" % (self.elemCountVar(), (self.newl_ind + "|| ").join(("(%s && %s && ((%s = %s) || 1))" % ("(*pp_payload = p_payload_bak) && ((*%s = elem_count_bak) || 1)" % self.elemCountVar(), child.fullDecode(self.countIndirection), self.choiceVarAccess(), child.varName()) for child in self.value)))
 
     # Return the full code needed to decode an "OTHER" element. This fetches the code of the type referenced by self.value.
     def decodeOther(self):
         assert self.type in ["OTHER"], "Expected OTHER type."
-        mytypes[self.value].setAccessPrefix(self.varAccess())
-        return mytypes[self.value].decodeStatement(*mytypes[self.value].singleFunc(), countIndirection=self.countIndirection)
+        return mytypes[self.value].decodeStatement(*self.singleFuncPrim(), countIndirection=self.countIndirection)
 
     # Return the full code needed to decode this element, including children, key and cbor, excluding repetitions.
-    def decode3(self):
+    def repeatedDecode(self):
         decoder = {
             "INT": self.decodeSingleFuncPrim,
             "UINT": self.decodeSingleFuncPrim,
@@ -896,16 +930,24 @@ class TYPE_decoder_generator_CBOR(TYPE):
             "OTHER": self.decodeOther,
         }[self.type]()
         if self.key or self.cbor:
-            args = ([self.key.decode2(self.countIndirection)] if self.key is not None else [])\
+            args = ([self.key.fullDecode(self.countIndirection)] if self.key is not None else [])\
                  + ([decoder])\
-                 + ([self.setElemCounts(str(self.maxQ)), self.cbor.decode2(self.countIndirection + 1)] if self.cborVarCondition() else [])
+                 + ([self.setElemCounts(str(self.maxQ)), self.cbor.fullDecode(self.countIndirection + 1)] if self.cborVarCondition() else [])
             decoder = "(%s)" % ((self.newl_ind + "&& ").join(args),)
         return decoder
 
+
+    # Code for the size of the repeated part of this element.
+    def resultLen(self):
+        if self.type is "ANY":
+            return "0"
+        else:
+            return "sizeof(%s)" % self.repeatedTypeName()
+
     # Return the full code needed to decode this element, including children, key, cbor, and repetitions.
-    def decode2(self, countIndirection):
-        if self.minQ != 1 or self.maxQ != 1:
-            func, *args = self.singleFunc()
+    def fullDecode(self, countIndirection):
+        if self.multiDecodeCondition():
+            func, *args = self.repeatedSingleFunc()
             return ("multi_decode(%s, %s, &%s, (void*)%s, %s, %s)" % (self.minQ,
                                                           self.maxQ,
                                                           self.countVarAccess() if self.countVarCondition() else self.presentVarAccess(),
@@ -915,12 +957,11 @@ class TYPE_decoder_generator_CBOR(TYPE):
                                                           self.resultLen()))
         else:
             self.countIndirection = countIndirection
-            return self.decode3()
+            return self.repeatedDecode()
 
     # Return the body of the decoder function for this element.
-    def decode4(self):
-        self.setAccessPrefix("(*p_type_result)")
-        return self.decode3()
+    def decode(self):
+        return self.repeatedDecode()
 
 
     # Recursively return a list of the bodies of the decoder functions for this element and its children + key + cbor.
@@ -935,8 +976,14 @@ class TYPE_decoder_generator_CBOR(TYPE):
         if self.key:
             for decoder in self.key.decoders():
                 yield decoder
-        if self.singleFuncImplCondition() and self.countIndirection is 0:
-            yield self
+        if self.type is "OTHER" and self.value not in entryTypeNames:
+            for decoder in mytypes[self.value].decoders():
+                yield decoder
+        if self.repeatedSingleFuncImplCondition() and self.countIndirection is 0:
+            yield (self.decode(), self.repeatedDecodeFuncName(), self.repeatedTypeName(), self.maxCountIndirection(0))
+        if ((not self.type is "OTHER") or self.repeatedMultiVarCondition()) and (self.singleFuncImplCondition() and self.countIndirection is 0):
+            decodeBody = self.decode()
+            yield (decodeBody, self.decodeFuncName(), self.typeName(), self.maxCountIndirection(0))
 
     # Find the maximum indirection for the element count variable for this element.
     def maxCountIndirection(self, current):
@@ -953,7 +1000,7 @@ class TYPE_decoder_generator_CBOR(TYPE):
             candidates.append(self.cbor.maxCountIndirection(self.countIndirection))
         if self.key:
             candidates.append(self.key.maxCountIndirection(self.countIndirection))
-        if self.minQ != 1 or self.maxQ != 1:
+        if self.multiDecodeCondition():
             candidates.append(current + 1)
         return max(candidates)
 
@@ -980,7 +1027,7 @@ def parse(instr, single = False):
 def getTypes(instr):
     typeRegex = "(\s*?\$?\$?([\w-]+)\s*(\/{0,2})=\s*(.*?)(?=(\Z|\s*\$?\$?[\w-]+\s*\/{0,2}=(?!\>))))"
     result = defaultdict(lambda: "")
-    types = [(key, value, slashes) for (_1, key, slashes, value, _2) in regex.findall(typeRegex, instr, regex.S | regex.M)]
+    types = [(key, value, slashes) for (_1, key, slashes, value, _2) in findall(typeRegex, instr, S | M)]
     for key, value, slashes in types:
         if slashes:
             result[key] += slashes
@@ -993,7 +1040,7 @@ def getTypes(instr):
 # Strip CDDL comments (';') from the string.
 def stripComments(instr):
     commentRegex = r"\;.*?\n"
-    return regex.sub(commentRegex, '', instr)
+    return sub(commentRegex, '', instr)
 
 # Return a list of typedefs for all defined types, with duplicate typedefs removed.
 def uniqueTypes(types):
@@ -1008,7 +1055,7 @@ def uniqueTypes(types):
             else:
                 assert (''.join(typeNames[typeName]) == ''.join(typeDef[0])),\
                        ("Two elements share the type name %s, but their implementations are not identical. "
-                      + "Please change one or both names.") % typeName
+                      + "Please change one or both names. One of them is %s") % (typeName, pprint(mtype.typeDef()))
     return outTypes
 
 
@@ -1017,36 +1064,47 @@ def uniqueFuncs(types):
     funcNames={}
     outTypes = []
     for mtype in types:
-        for funcType in mtype.decoders():
-            _ = funcType.decode4()
-        for funcType in mtype.decoders():
-            funcName = funcType.decodeFuncName()
-            funcdecode = funcType.decode4()
+        decoders = list(mtype.decoders())
+        for funcType in decoders:
+            funcdecode = funcType[0]
+            funcName = funcType[1]
             if funcName not in funcNames.keys():
                 funcNames[funcName] = funcType
                 outTypes.append(funcType)
             elif funcName in funcNames.keys():
-                assert funcNames[funcName].decode4() == funcdecode,\
+                assert funcNames[funcName][0] == funcdecode,\
                        ("Two elements share the function name %s, but their implementations are not identical. "
-                      + "Please change one or both names.\n%s\n\n%s") % (funcName, funcNames[funcName].decode4(), funcdecode)
+                      + "Please change one or both names.\n\n%s\n\n%s") % (funcName, funcNames[funcName][0], funcdecode)
 
     return outTypes
 
 # Return a list of decoder functions for all defined types, with unused functions removed.
 def usedFuncs(types, entryTypes):
+    entryTypes = [(funcType.decode(), funcType.decodeFuncName(), funcType.typeName(), funcType.maxCountIndirection(0)) for funcType in entryTypes]
     outTypes = [funcType for funcType in entryTypes]
-    fullCode = "".join([funcType.decode4() for funcType in entryTypes])
+    fullCode = "".join([funcType[0] for funcType in entryTypes])
     for funcType in reversed(types):
-        funcName = funcType.decodeFuncName()
-        if funcType not in entryTypes and regex.search(r"%s\W" % funcName, fullCode):
-            fullCode += funcType.decode4()
+        funcName = funcType[1]
+        if funcType not in entryTypes and search(r"%s\W" % funcName, fullCode):
+            fullCode += funcType[0]
             outTypes.append(funcType)
+    return list(reversed(outTypes))
+
+# Return a list of typedefs for all defined types, with unused types removed.
+def usedTypes(typeDefs, entryTypes):
+    outTypes = [typeDef for typeDef in entryTypes]
+    fullCode = "".join(["".join(typeDef[0]) for typeDef in entryTypes])
+    for typeDef in reversed(typeDefs):
+        typeName = typeDef[1]
+        if typeDef not in entryTypes and search(r"%s\W" % typeName, fullCode):
+            fullCode += "".join(typeDef[0])
+            outTypes.append(typeDef)
     return list(reversed(outTypes))
 
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         description=
 '''Parse a CDDL file and produce C code that validates and decodes CBOR.
 The output from this script is a C file and a header file. The header file
@@ -1065,11 +1123,8 @@ The verbose flag turns on printing, both in the CBOR primitive decoding, and in
 the generated code. This is meant for debugging when decoding fails since the
 point at which decoding failed is not returned to the caller in normal operation.
 
-This script requires Jinja2 to create the c and h files, and requires regex for
-lookaround matching functionality not present in re.
-
-There are tests for the script and its output under tests/scripts/cddl.''',
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+This script requires 'regex' for lookaround functionality not present in 're'.''',
+        formatter_class=RawDescriptionHelpFormatter)
 
     parser.add_argument("-i", "--input", required=True, type=str,
                         help="Path to input CDDL file.")
@@ -1087,22 +1142,22 @@ There are tests for the script and its output under tests/scripts/cddl.''',
 
 # Render a single decoding function with signature and body.
 def render_function(decoder):
-    body = decoder.decode4()
+    body = decoder[0]
     return f"""
-static bool {decoder.decodeFuncName()}(
+static bool {decoder[1]}(
 		uint8_t const ** pp_payload, uint8_t const * const p_payload_end,
 		size_t * const p_elem_count, void * p_result, void * p_min_value,
 		void * p_max_value)
 {{
-	cbor_decode_print("{ decoder.decodeFuncName() }\\n");
+	cbor_decode_print("{ decoder[1] }\\n");
 	{"size_t temp_elem_count;" if "temp_elem_count" in body else ""}
-	{f"size_t elem_count[{ decoder.maxCountIndirection(0) }];" if "elem_count[" in body else ""}
+	{f"size_t elem_count[{ decoder[3] }];" if "elem_count[" in body else ""}
 	{"uint32_t current_list_num;" if "current_list_num" in body else ""}
 	{"uint8_t const * p_payload_bak;" if "p_payload_bak" in body else ""}
 	{"size_t elem_count_bak;" if "elem_count_bak" in body else ""}
 	{"uint32_t min_value;" if "min_value" in body else ""}
 	{"uint32_t max_value;" if "max_value" in body else ""}
-	{decoder.typeName()}* p_type_result = ({decoder.typeName()}*)p_result;
+	{decoder[2]}* p_type_result = ({decoder[2]}*)p_result;
 
 	if (!{ body })
 	{{
@@ -1173,12 +1228,15 @@ if __name__ == "__main__":
 
     # Parse the definitions, replacing the each string with a TYPE_decoder_generator_CBOR instance.
     for mytype in mytypes:
-        # print ("Parsing %s = %s" % (mytype, mytypes[mytype]))
         (parsed, _) = parseSingle(mytypes[mytype].replace("\n", " "), "", base_name = mytype)
         mytypes[mytype] = parsed.doFlatten(parsed)[0]
         mytypes[mytype].setIdPrefix("")
 
         counter(True)
+
+    # set access prefix (struct access paths) for all the definitions.
+    for mytype in mytypes:
+        mytypes[mytype].setAccessPrefix("(*p_type_result)")
 
     # Postvalidate all the definitions.
     for mytype in mytypes:
@@ -1187,12 +1245,12 @@ if __name__ == "__main__":
     # Parsing is done, pretty print the result.
     # pprint(mytypes)
 
-    # Sort type definitions so the typedefs will come in the correct order in the header file and the function in the
-    # correct order in the c file.
-    sortedTypes = list(sorted(mytypes.values(), key=lambda type: type.dependsOn(), reverse=False))
-
     # Prepare the list of types that will have exposed decoder functions.
     entryTypes = [mytypes[entry] for entry in entryTypeNames]
+
+    # Sort type definitions so the typedefs will come in the correct order in the header file and the function in the
+    # correct order in the c file.
+    sortedTypes = list(sorted(entryTypes, key=lambda type: type.dependsOn(), reverse=False))
 
     uFuncs = uniqueFuncs(sortedTypes)
     uFuncs = usedFuncs(uFuncs, entryTypes)

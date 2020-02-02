@@ -45,6 +45,8 @@ typedef struct
 typedef bool(decoder_t)(uint8_t const **, uint8_t const *const, size_t *const,
 			void *, void *, void *);
 
+typedef enum{DUMMY} dummy_enum_t;
+
 bool intx32_decode(uint8_t const **const pp_payload, uint8_t const *const p_payload_end,
 		size_t *const p_elem_count,
 		int32_t *p_result, void *p_min_value, void *p_max_value);
@@ -85,6 +87,11 @@ bool float_decode(uint8_t const **const pp_payload,
 bool any_decode(uint8_t const **const pp_payload, uint8_t const *const p_payload_end,
 		size_t *const p_elem_count,
 		void *p_result, void *p_min_result, void *p_max_result);
+
+bool union_decode(size_t union_size, dummy_enum_t *p_union_result,
+		decoder_t *decoders[], uint8_t const **const pp_payload,
+		uint8_t const *const p_payload_end, size_t *const p_elem_count,
+		void *p_result, void *p_min_results[], void *p_max_results[]);
 
 bool multi_decode(size_t min_decode, size_t max_decode, size_t *p_num_decode,
 		decoder_t decoder, uint8_t const **const pp_payload,

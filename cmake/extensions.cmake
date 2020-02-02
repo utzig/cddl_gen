@@ -34,6 +34,7 @@ function(cddl_source target cddl_file)
   cmake_parse_arguments(CDDL "VERBOSE" "" "ENTRY_TYPES" ${ARGN})
   if (${CDDL_VERBOSE})
     set(verbose_flag "-v")
+    target_compile_definitions(cbor_decode PRIVATE "CDDL_CBOR_VERBOSE")
   endif()
 
   if (NOT DEFINED PYTHON_EXECUTABLE)

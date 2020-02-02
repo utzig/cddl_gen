@@ -35,7 +35,13 @@ static bool value_extract(uint8_t const **const pp_payload,
 
 	cbor_decode_trace();
 
-	if (result_len == 0 || *p_elem_count == 0) {
+	if (result_len == 0) {
+		cbor_decode_trace();
+		(*pp_payload)--;
+		return false;
+	}
+
+	if (*p_elem_count == 0) {
 		cbor_decode_trace();
 		(*pp_payload)--;
 		return false;
@@ -146,7 +152,7 @@ static bool uint32_decode(uint8_t const **const pp_payload,
 		cbor_decode_trace();
 		return false;
 	}
-	cbor_decode_print("val: %u\r\n", *p_result);
+	cbor_decode_print("val: %u\r\n", *(uint32_t*)p_result);
 	return true;
 }
 
@@ -358,17 +364,40 @@ bool any_decode(uint8_t const **const pp_payload,
 }
 
 
-bool multi_decode(size_t min_decode, size_t max_decode,
-				size_t *p_num_decode, decoder_t decoder,
-				uint8_t const **const pp_payload,
-				uint8_t const *const p_payload_end,
-				size_t *const p_elem_count,
-				void *p_result, void *p_min_result,
-				void *p_max_result, size_t result_len)
+bool union_decode(size_t union_size, dummy_enum_t *p_union_result,
+		decoder_t *decoders[], uint8_t const **const pp_payload,
+		uint8_t const *const p_payload_end, size_t *const p_elem_count,
+		void *p_result, void *p_min_results[], void *p_max_results[])
 {
+	uint8_t const *p_payload_bak = *pp_payload;
+	size_t elem_count_bak = *p_elem_count;
+	for (dummy_enum_t i = 0; i < union_size; i++) {
+		*pp_payload = p_payload_bak;
+		*p_elem_count = elem_count_bak;
+
+		if (decoders[i](pp_payload, p_payload_end, p_elem_count,
+				p_result, p_min_results[i], p_max_results[i])) {
+			*p_union_result = i;
+			cbor_decode_print("Found union member %d.\n", i);
+			return true;
+		}
+	}
+	cbor_decode_trace();
+	return false;
+}
+
+
+bool multi_decode(size_t min_decode, size_t max_decode, size_t *p_num_decode,
+		decoder_t decoder, uint8_t const **const pp_payload,
+		uint8_t const *const p_payload_end, size_t *const p_elem_count,
+		void *p_result, void *p_min_result, void *p_max_result,
+		size_t result_len)
+{
+	uint8_t const *p_payload_bak = *pp_payload;
+	size_t elem_count_bak = *p_elem_count;
 	for (size_t i = 0; i < max_decode; i++) {
-		uint8_t const *p_payload_bak = *pp_payload;
-		size_t elem_count_bak = *p_elem_count;
+		uint8_t const *p_payload_bak_single = *pp_payload;
+		size_t elem_count_bak_single = *p_elem_count;
 
 		if (!decoder(pp_payload, p_payload_end, p_elem_count,
 				(uint8_t *)p_result + i*result_len,
@@ -376,11 +405,13 @@ bool multi_decode(size_t min_decode, size_t max_decode,
 			*p_num_decode = i;
 			if (i < min_decode) {
 				cbor_decode_trace();
+				*pp_payload = p_payload_bak;
+				*p_elem_count = elem_count_bak;
 			} else {
 				cbor_decode_print("Found %d elements.\n", i);
+				*pp_payload = p_payload_bak_single;
+				*p_elem_count = elem_count_bak_single;
 			}
-			*pp_payload = p_payload_bak;
-			*p_elem_count = elem_count_bak;
 			return (i >= min_decode);
 		}
 	}

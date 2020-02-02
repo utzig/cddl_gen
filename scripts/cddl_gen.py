@@ -405,6 +405,7 @@ class TYPE_decoder_generator_CBOR(TYPE):
                                   # been decoded.
         self.dependsOnCall = False # Used as a guard against endless recursion in self.dependsOn()
         self.base_name = base_name # Used as default for self.baseName()
+        self.typeDefConditionOverride = None # Override for typeDefCondition()
 
     # Base name used for functions, variables, and typedefs.
     def baseName(self):
@@ -593,6 +594,9 @@ class TYPE_decoder_generator_CBOR(TYPE):
     def repeatedDecodeFuncName(self):
         return "decode_repeated%s" % self.varName()
 
+    def setTypeDefCondition(self, typeDefCondition):
+        self.typeDefConditionOverride = typeDefCondition
+
     # Declaration of the variables of all children.
     def childDeclarations(self):
         decl = [line for child in self.value for line in child.fullDeclaration()]
@@ -600,7 +604,7 @@ class TYPE_decoder_generator_CBOR(TYPE):
 
     # Declaration of the variables of all children.
     def childSingleDeclarations(self):
-        decl = [line for child in self.value for line in child.addVarName(child.singleVarType())]
+        decl = [line for child in self.value for line in child.addVarName([child.typeName()] if child.valTypeName() is not None else [])]
         return decl
 
     # Enclose a list of declarations in a block (struct, union or enum).
@@ -618,7 +622,8 @@ class TYPE_decoder_generator_CBOR(TYPE):
         if self.type in ["LIST", "MAP", "GROUP"]:
             list(map(lambda child: child.setAccessPrefix(self.varAccess()), self.value))
         if self.type is "UNION":
-            list(map(lambda child: child.setAccessPrefix(self.accessAppendDelim(self.valAccess(), self.accessDelimiter, child.varName()) if child.multiMember() else self.valAccess()), self.value))
+            list(map(lambda child: child.setTypeDefCondition(child.multiMember()), self.value))
+            list(map(lambda child: child.setAccessPrefix("(*p_type_result)" if child.multiMember() else self.valAccess()), self.value))
         if self.key is not None:
             self.key.setAccessPrefix(self.varAccess())
         if self.cborVarCondition():
@@ -719,6 +724,8 @@ class TYPE_decoder_generator_CBOR(TYPE):
 
     # Whether this element should have a typedef in the code.
     def typeDefCondition(self):
+        if (self.typeDefConditionOverride):
+            return True
         if (self in mytypes.values() and self.multiMember()):
             return True
         return False
@@ -741,8 +748,14 @@ class TYPE_decoder_generator_CBOR(TYPE):
         if self.type is "OTHER":
             retval.extend(mytypes[self.value].typeDef())
         if self.repeatedTypeDefCondition():
+            # if self.repeatedTypeName() == "_SUIT_Condition_t":
+            #     pprint(self)
             retval.extend([(self.singleVarType(full=False), self.repeatedTypeName())])
         if self.typeDefCondition():
+            # if self.typeName() == "_SUIT_Condition_t":
+            #     pprint(self)
+            #     print("self.multiMember(): " + str(self.multiMember()))
+            #     print("self.typeDefConditionOverride(): " + str(self.typeDefConditionOverride))
             retval.extend([(self.singleVarType(), self.typeName())])
         return retval
 
@@ -777,30 +790,22 @@ class TYPE_decoder_generator_CBOR(TYPE):
         return "(%s(%s))" % (func, self.decodeArgs(*args, **kwargs))
 
     # Return a code snippet that assigns a variable the address of another variable, or to NULL.
-    def valOrNull(self, value, varname):
-        return "(%s=%d) ? &%s : &%s" % (varname, value, varname, varname) if value is not None else "NULL"
-
-    # Assign the min_value variable.
-    def minValOrNull(self, value):
-        return self.valOrNull(value, "min_value")
-
-    # Assign the max_value variable.
-    def maxValOrNull(self, value):
-        return self.valOrNull(value, "max_value")
+    def valOrNull(self, value):
+        return "(uint32_t[]){%d}" % value if value is not None else "NULL"
 
     # Return the function name and arguments to call to decode this element. Only used when this element DOESN'T define
     # its own decoder function (when it's a primitive type, for which functions already exist, or when the function is
     # defined elsewhere ("OTHER"))
     def singleFuncPrim(self):
         retval = {
-            "INT":   lambda: ["intx32_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
-            "UINT":  lambda: ["uintx32_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
-            "NINT":  lambda: ["intx32_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
-            "FLOAT": lambda: ["float_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
-            "BSTR":  lambda: ["strx_decode" if not self.cborVarCondition() else "strx_start_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
-            "TSTR":  lambda: ["strx_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
-            "BOOL":  lambda: ["boolx_decode", self.valAccess(), self.minValOrNull(1 if self.value else 0), self.maxValOrNull(0 if self.value == False else 1)],
-            "NIL":   lambda: ["primx_decode", "NULL", self.minValOrNull(22), self.maxValOrNull(22)],
+            "INT":   lambda: ["intx32_decode", self.valAccess(), self.valOrNull(self.minValue), self.valOrNull(self.maxValue)],
+            "UINT":  lambda: ["uintx32_decode", self.valAccess(), self.valOrNull(self.minValue), self.valOrNull(self.maxValue)],
+            "NINT":  lambda: ["intx32_decode", self.valAccess(), self.valOrNull(self.minValue), self.valOrNull(self.maxValue)],
+            "FLOAT": lambda: ["float_decode", self.valAccess(), self.valOrNull(self.minValue), self.valOrNull(self.maxValue)],
+            "BSTR":  lambda: ["strx_decode" if not self.cborVarCondition() else "strx_start_decode", self.valAccess(), self.valOrNull(self.minSize), self.valOrNull(self.maxSize)],
+            "TSTR":  lambda: ["strx_decode", self.valAccess(), self.valOrNull(self.minSize), self.valOrNull(self.maxSize)],
+            "BOOL":  lambda: ["boolx_decode", self.valAccess(), self.valOrNull(1 if self.value else 0), self.valOrNull(0 if self.value == False else 1)],
+            "NIL":   lambda: ["primx_decode", "NULL", self.valOrNull(22), self.valOrNull(22)],
             "ANY":   lambda: ["any_decode", "NULL", "NULL", "NULL"],
             "LIST":  lambda: self.value[0].singleFunc(),
             "OTHER": lambda: listReplaceIfNotNull(mytypes[self.value].singleFunc(), 1, self.valAccess()),
@@ -904,7 +909,22 @@ class TYPE_decoder_generator_CBOR(TYPE):
     # Return the full code needed to decode a "UNION" element's children.
     def decodeUnion(self):
         assert self.type in ["UNION"], "Expected UNION type."
-        return "((p_payload_bak = *pp_payload) && ((elem_count_bak = *%s) || 1) && (%s))" % (self.elemCountVar(), (self.newl_ind + "|| ").join(("(%s && %s && ((%s = %s) || 1))" % ("(*pp_payload = p_payload_bak) && ((*%s = elem_count_bak) || 1)" % self.elemCountVar(), child.fullDecode(self.countIndirection), self.choiceVarAccess(), child.varName()) for child in self.value)))
+        funcNames, _, minVals, maxVals = zip(*(child.singleFunc() for child in self.value))
+        # pprint(self)
+        # pprint(list(funcNames))
+        # pprint(minVals)
+        # pprint(maxVals)
+        return "union_decode(%s, %s, %s, %s, %s, %s, %s, %s, %s)" % (len(self.value),
+                    "(dummy_enum_t*)&" + self.choiceVarAccess(),
+                    f"(decoder_t *[]){{{', '.join('(void *)' + name for name in funcNames)}}}",
+                    "pp_payload",
+                    "p_payload_end",
+                    self.elemCountVar(),
+                    "&" + self.valAccess(),
+                    "(void *[]){" + ', '.join(minVals) + "}",
+                    "(void *[]){" + ", ".join(minVals) + "}")
+
+        # return "((p_payload_bak = *pp_payload) && ((elem_count_bak = *%s) || 1) && (%s))" % (self.elemCountVar(), (self.newl_ind + "|| ").join(("(%s && %s && ((%s = %s) || 1))" % ("(*pp_payload = p_payload_bak) && ((*%s = elem_count_bak) || 1)" % self.elemCountVar(), child.fullDecode(self.countIndirection), self.choiceVarAccess(), child.varName()) for child in self.value)))
 
     # Return the full code needed to decode an "OTHER" element. This fetches the code of the type referenced by self.value.
     def decodeOther(self):
@@ -965,10 +985,10 @@ class TYPE_decoder_generator_CBOR(TYPE):
 
 
     # Recursively return a list of the bodies of the decoder functions for this element and its children + key + cbor.
-    def decoders(self):
+    def decoders(self, implCondition = None):
         if self.type in ["LIST", "MAP", "GROUP", "UNION"]:
             for child in self.value:
-                for decoder in child.decoders():
+                for decoder in child.decoders(implCondition=True if (self.type is "UNION" and child.multiMember()) else None):
                     yield decoder
         if self.cbor:
             for decoder in self.cbor.decoders():
@@ -981,7 +1001,9 @@ class TYPE_decoder_generator_CBOR(TYPE):
                 yield decoder
         if self.repeatedSingleFuncImplCondition() and self.countIndirection is 0:
             yield (self.decode(), self.repeatedDecodeFuncName(), self.repeatedTypeName(), self.maxCountIndirection(0))
-        if ((not self.type is "OTHER") or self.repeatedMultiVarCondition()) and (self.singleFuncImplCondition() and self.countIndirection is 0):
+        if implCondition is None:
+            implCondition = ((not self.type is "OTHER") or self.repeatedMultiVarCondition()) and (self.singleFuncImplCondition() and self.countIndirection is 0)
+        if implCondition:
             decodeBody = self.decode()
             yield (decodeBody, self.decodeFuncName(), self.typeName(), self.maxCountIndirection(0))
 
@@ -1055,7 +1077,7 @@ def uniqueTypes(types):
             else:
                 assert (''.join(typeNames[typeName]) == ''.join(typeDef[0])),\
                        ("Two elements share the type name %s, but their implementations are not identical. "
-                      + "Please change one or both names. One of them is %s") % (typeName, pprint(mtype.typeDef()))
+                      + "Please change one or both names. One of them is %s") % (typeName, pformat(mtype.typeDef()))
     return outTypes
 
 

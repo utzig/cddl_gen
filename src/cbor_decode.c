@@ -230,21 +230,21 @@ bool strx_decode(uint8_t const **const pp_payload,
 bool strx_val_decode(uint8_t const **const pp_payload,
 				uint8_t const *const p_payload_end,
 				size_t *const p_elem_count,
-				void *p_result, void *p_expected_val,
-				void *p_unused)
+				void *p_result, uint8_t *p_expected_val,
+				void *p_val_len)
 {
-	cbor_string_type_t *p_str_val = (cbor_string_type_t *)p_expected_val;
+	// cbor_string_type_t *p_str_val = (cbor_string_type_t *)p_expected_val;
 	const uint8_t *const p_payload_bak = *pp_payload;
 	const size_t elem_count_bak = *p_elem_count;
 
 	if (!strx_decode(pp_payload, p_payload_end, p_elem_count, p_result,
-			&p_str_val->len, &p_str_val->len)) {
+			p_val_len, p_val_len)) {
 		cbor_decode_trace();
 		return false;
 	}
 	cbor_string_type_t *p_str_result = (cbor_string_type_t *)p_result;
 
-	if (memcmp(p_str_result->value, p_str_val->value, p_str_result->len)){
+	if (memcmp(p_str_result->value, p_expected_val, p_str_result->len)){
 		*pp_payload = p_payload_bak;
 		*p_elem_count = elem_count_bak;
 		cbor_decode_trace();

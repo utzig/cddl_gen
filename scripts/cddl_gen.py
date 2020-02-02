@@ -794,7 +794,7 @@ class TYPE_decoder_generator_CBOR(TYPE):
             "NINT":  lambda: ["intx32_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
             "FLOAT": lambda: ["float_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
             "BSTR":  lambda: ["strx_decode" if not self.cborVarCondition() else "strx_start_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
-            "TSTR":  lambda: ["strx_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)] if self.value is None else ["strx_val_decode", self.valAccess(), f"&(cbor_string_type_t){{.len = {len(self.value)}, .value = \"{self.value}\"}}", "NULL"],
+            "TSTR":  lambda: ["strx_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)] if self.value is None else ["strx_val_decode", self.valAccess(), f'"{self.value}"', self.maxValOrNull(len(self.value))],
             "BOOL":  lambda: ["boolx_decode", self.valAccess(), self.minValOrNull(1 if self.value else 0), self.maxValOrNull(0 if self.value == False else 1)],
             "NIL":   lambda: ["primx_decode", "NULL", self.minValOrNull(22), self.maxValOrNull(22)],
             "ANY":   lambda: ["any_decode", "NULL", "NULL", "NULL"],

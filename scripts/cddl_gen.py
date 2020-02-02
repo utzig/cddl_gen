@@ -713,10 +713,6 @@ class TYPE_decoder_generator_CBOR(TYPE):
         else:
             return self.varType()
 
-    # Whether this element needs a check (memcmp) for a string value.
-    def expectedStringCondition(self):
-        return self.type in ["BSTR", "TSTR"] and not not self.value
-
     # Whether this element should have a typedef in the code.
     def typeDefCondition(self):
         if (self in mytypes.values() and self.multiMember()):
@@ -798,7 +794,7 @@ class TYPE_decoder_generator_CBOR(TYPE):
             "NINT":  lambda: ["intx32_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
             "FLOAT": lambda: ["float_decode", self.valAccess(), self.minValOrNull(self.minValue), self.maxValOrNull(self.maxValue)],
             "BSTR":  lambda: ["strx_decode" if not self.cborVarCondition() else "strx_start_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
-            "TSTR":  lambda: ["strx_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)],
+            "TSTR":  lambda: ["strx_decode", self.valAccess(), self.minValOrNull(self.minSize), self.maxValOrNull(self.maxSize)] if self.value is None else ["strx_val_decode", self.valAccess(), f"&(cbor_string_type_t){{.len = {len(self.value)}, .value = \"{self.value}\"}}", "NULL"],
             "BOOL":  lambda: ["boolx_decode", self.valAccess(), self.minValOrNull(1 if self.value else 0), self.maxValOrNull(0 if self.value == False else 1)],
             "NIL":   lambda: ["primx_decode", "NULL", self.minValOrNull(22), self.maxValOrNull(22)],
             "ANY":   lambda: ["any_decode", "NULL", "NULL", "NULL"],
@@ -815,7 +811,7 @@ class TYPE_decoder_generator_CBOR(TYPE):
 
     # Whether this element needs its own decoder function.
     def singleFuncImplCondition(self):
-        retval = (False or self.key or self.cborVarCondition() or self.expectedStringCondition() or self.typeDefCondition())
+        retval = (False or self.key or self.cborVarCondition() or self.typeDefCondition())
         return retval
 
     # Whether this element needs its own decoder function.
@@ -862,8 +858,7 @@ class TYPE_decoder_generator_CBOR(TYPE):
     # Return the full code needed to decode a "BSTR" or "TSTR" element.
     def decodeStr(self):
         assert self.type in ["BSTR", "TSTR"], "Expected string type."
-        return self.decodeSingleFuncPrim() +\
-            ("&& !memcmp(\"{0}\", {1}.value, {1}.len)".format(self.value, self.valAccess()) if self.expectedStringCondition() else "")
+        return self.decodeSingleFuncPrim()
 
 
     # Recursively sum the total minimum and maximum element count for this element.

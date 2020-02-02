@@ -62,6 +62,12 @@ bool strx_decode(uint8_t const **const pp_payload, uint8_t const *const p_payloa
 		size_t *const p_elem_count,
 		void *p_result, void *p_min_len, void *p_max_len);
 
+bool strx_val_decode(uint8_t const **const pp_payload,
+				uint8_t const *const p_payload_end,
+				size_t *const p_elem_count,
+				void *p_result, void *p_expected_val,
+				void *p_unused);
+
 bool list_start_decode(uint8_t const **const pp_payload,
 		uint8_t const *const p_payload_end, size_t *const p_elem_count,
 		size_t *p_result, size_t min_num,
